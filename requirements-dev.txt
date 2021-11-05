@@ -1,0 +1,3 @@
+black
+pylint
+regex==2021.9.30  # needed for M1 Mac

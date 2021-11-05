@@ -1,75 +1,161 @@
-#!/usr/bin/env python
-#
-# rrdclean.py - trivial tool to remove spikes from rrd files
-#
-#
-# Why another tool? Dunno. It's probably as bad as others in most
-# aspects, but this one is interactive which is a property I needed...
-#
-# Author: Magnus Hagander <magnus@hagander.net>, Redpill Linpro AB
-#
-#
-#
-# Note: error control is basically missing, expect ugly
-# exceptions instead of nice error messages...
+#!/usr/bin/env python3
 
+"""rrdclean - tool to remove spikes from rrd files"""
+
+# based on rrdclean by Magnus Hagander <magnus@hagander.net>
+# https://github.com/mhagander/rrdclean
+
+# TODO: refactor remove_spikes() and add unit tests
+
+import argparse
 import os
+import re
+import subprocess
 import sys
-from subprocess import Popen, PIPE
+import tempfile
 import xml.dom.minidom
 
-rrdname = sys.argv[1]
-if not os.path.exists(rrdname):
-	print "File %s does not exist" % rrdname
-	sys.exit(1)
 
-alldata = Popen("rrdtool dump %s" % rrdname, shell=True, stdout=PIPE).communicate()[0]
+UNIT_MAP = {}
+UNIT_MAP["K"] = 10 ** 3
+UNIT_MAP["M"] = 10 ** 6
+UNIT_MAP["G"] = 10 ** 9
+UNIT_MAP["T"] = 10 ** 12
+UNIT_MAP["P"] = 10 ** 15
+UNIT_MAP["E"] = 10 ** 18
 
-# It's not that much data, so process everything in memory
-dom = xml.dom.minidom.parseString(alldata)
-rowvals = []
-for n in dom.getElementsByTagName("row"):
-	# First child is the <v> tag, then comes the value
-	num = n.firstChild.firstChild.nodeValue
-	if num != "NaN":
-		rowvals.append(float(num))
 
-print "Read %s values (rest is NaN)" % len(rowvals)
-rowvals.sort(reverse=True)
-cutoff = ''
-for endpos in range(20,len(rowvals),20):
-	print "\n".join(map(str, rowvals[endpos-20:endpos]))
-	cutoff = raw_input("Enter cutoff value, or blank to see more values: ")
-	if cutoff != "": break
+def remove_spikes(rrd_file: str, cutoff: float):
+    """Remove spikes from rrd file."""
+    updates = []
 
-cutoff = float(cutoff)
-for n in dom.getElementsByTagName("row"):
-	num = n.firstChild.firstChild.nodeValue
-	if num != "NaN":
-		if float(num) > cutoff:
-			while True:
-				if n.previousSibling.previousSibling.nodeType == n.COMMENT_NODE:
-					x = raw_input("Replace value %s at %s [y/n]? " % (float(num), n.previousSibling.previousSibling.nodeValue))
-				else:
-					x = raw_input("Replace value %s [y/n]? " % (float(num),))
+    with tempfile.NamedTemporaryFile(
+        suffix=".xml", prefix="rrd-orig-", delete=False
+    ) as f:
+        xml_file = f.name
 
-				if x == "y":
-					print "Ok, replacing"
-					n.firstChild.firstChild.nodeValue = "NaN"
-					break
-				elif x == "n":
-					break
+    print("Dumping to temp file: {}".format(xml_file))
 
-# Now dump the output
-rrdbak = "%s.bak" % rrdname
-os.rename(rrdname, rrdbak)
-p = Popen("rrdtool restore -r - %s" % rrdname, shell=True, stdin=PIPE)
-dom.writexml(p.stdin)
-p.stdin.flush()
-p.stdin.close()
-p.wait()
+    result = subprocess.run("rrdtool dump {} {}".format(rrd_file, xml_file), shell=True)
 
-# Reset the owner and permissions to what they were before
-s = os.stat(rrdbak)
-os.chown(rrdname, s.st_uid, s.st_gid)
-os.chmod(rrdname, s.st_mode)
+    if result.returncode != 0:  # TODO: use check=True and try/except
+        print("Error dumping")
+        sys.exit(1)
+
+    try:
+        with open(xml_file) as f:
+            data = f.read()
+    except FileNotFoundError:
+        print("{} not found".format(xml_file))
+        sys.exit(1)
+
+    dom = xml.dom.minidom.parseString(data)
+    for row in dom.getElementsByTagName("row"):
+        # row: <!-- 2021-10-28 21:45:00 CDT / 1635475500 --> <row><v>9.9554738243e+06</v><v>9.9554470127e+06</v></row>
+        # let's look at the parts of a row
+        # <!-- 2021-10-28 21:45:00 CDT / 1635475500 -->: previousSibling.previousSibling.nodeValue
+        # <row>: beginning of row
+        # <v>: beginning of child node 0
+        # 9.9554738243e+06: value of child node 0's firstChild
+        # </v>
+        # <v>: beginning of child node 1
+        # 9.9554470127e+06: value of child node 1's firstChild
+        # </v>
+        # </row>
+        update = [row.previousSibling.previousSibling.nodeValue]
+        is_spike = False
+        for child in row.childNodes:
+            if (
+                child.firstChild.nodeValue != "NaN"
+                and float(child.firstChild.nodeValue) > cutoff
+            ):
+                update.append(child.firstChild.nodeValue)
+                update.append("NaN")
+                child.firstChild.nodeValue = "NaN"  # remove the spike
+                is_spike = True
+            else:
+                update.append(child.firstChild.nodeValue)
+                update.append(child.firstChild.nodeValue)
+        if is_spike:
+            updates.append(update)
+
+    if updates:
+        print("Spikes found:")
+        for update in updates:
+            print(update)
+
+        response = input("Remove them [y/N]? ")
+        if response.lower() == "y":
+            dump_file(dom, rrd_file)
+        else:
+            print("Not modifying file.  Goodbye.")
+            return
+
+    else:
+        print("No spikes found")
+        return
+
+
+def dump_file(dom, rrd_file: str):
+    """Now dump the output."""
+    with tempfile.NamedTemporaryFile(
+        suffix=".xml", prefix="rrd-clean-", delete=False
+    ) as f:
+        xml_file = f.name
+
+    try:
+        with open(xml_file, "w") as f:
+            dom.writexml(f)
+    except FileNotFoundError:
+        print("{} not found".format(xml_file))
+        sys.exit(1)
+
+    rrd_bak = "{}.bak".format(rrd_file)
+
+    os.rename(rrd_file, rrd_bak)
+
+    result = subprocess.run(
+        "rrdtool restore -r {} {}".format(xml_file, rrd_file), shell=True
+    )
+
+    if result.returncode != 0:  # TODO: use check=True and try/except
+        print("Error restoring")
+        sys.exit(1)
+
+
+def normalize_threshold(thold: str) -> int:
+    """Normalize the threshold (e.g. turn 10k into 10000).  Return -1 on error."""
+    try:
+        ret = int(thold)
+        return ret
+    except ValueError:
+        pass
+
+    match = re.match(r"(\d+(?:\.\d+)?)([kmgt])", thold, flags=re.IGNORECASE)
+    if not match:
+        return -1
+
+    return float(match.group(1)) * UNIT_MAP[match.group(2).upper()]
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Remove spikes from an RRD file")
+    parser.add_argument("file", type=str, help="RRD file (binary format)")
+    parser.add_argument(
+        "threshold", type=str, help="Spike threshold (may use M, G, T units)"
+    )
+    args = parser.parse_args()
+
+    src = args.file
+    threshold = normalize_threshold(args.threshold)
+
+    if not os.path.exists(src):
+        print("File {} does not exist".format(src))
+        sys.exit(1)
+
+    if threshold == -1:
+        print("Invalid threshold {}".format(args.threshold))
+        sys.exit(1)
+
+    print(threshold)
+    remove_spikes(src, threshold)
