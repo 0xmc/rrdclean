@@ -1,11 +1,22 @@
-rrdclean
-========
+# rrdclean
 
 Forked from https://github.com/mhagander/rrdclean
 
-Modified
-* python2 -> python3
-* temp files instead of mucking about with stdin and pipes
-* interactive to remove all spikes, not prompted for each individual one
-* friendly thresholds (1.2k instead of 1200)
-* remove all values in row above threshold, not just the first one
+Features of this version
+* Python3
+* Temp files instead of mucking about with stdin and pipes
+* Interactive to remove all spikes, not prompted for each individual one
+* Friendly thresholds (1.2k instead of 1200)
+* Remove all values in row above threshold, not just the first one
+
+## Developing
+Install
+```shell
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements-dev.txt
+```
+Before PR
+```shell
+tox
+```

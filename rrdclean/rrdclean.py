@@ -1,13 +1,6 @@
-#!/usr/bin/env python3
+"""rrdclean - rrdclean functions."""
 
-"""rrdclean - tool to remove spikes from rrd files"""
 
-# based on rrdclean by Magnus Hagander <magnus@hagander.net>
-# https://github.com/mhagander/rrdclean
-
-# TODO: refactor remove_spikes() and add unit tests
-
-import argparse
 import os
 import re
 import subprocess
@@ -34,19 +27,19 @@ def remove_spikes(rrd_file: str, cutoff: float):
     ) as f:
         xml_file = f.name
 
-    print("Dumping to temp file: {}".format(xml_file))
+    print(f"Dumping to temp file: {xml_file}")
 
-    result = subprocess.run("rrdtool dump {} {}".format(rrd_file, xml_file), shell=True)
-
-    if result.returncode != 0:  # TODO: use check=True and try/except
+    try:
+        subprocess.run(f"rrdtool dump {rrd_file} {xml_file}", shell=True, check=True)
+    except subprocess.CalledProcessError:
         print("Error dumping")
         sys.exit(1)
 
     try:
-        with open(xml_file) as f:
+        with open(xml_file, encoding="UTF-8") as f:  # type: ignore
             data = f.read()
     except FileNotFoundError:
-        print("{} not found".format(xml_file))
+        print(f"{xml_file} not found")
         sys.exit(1)
 
     dom = xml.dom.minidom.parseString(data)
@@ -104,58 +97,40 @@ def dump_file(dom, rrd_file: str):
         xml_file = f.name
 
     try:
-        with open(xml_file, "w") as f:
+        with open(xml_file, "w", encoding="UTF-8") as f:  # type: ignore
             dom.writexml(f)
     except FileNotFoundError:
-        print("{} not found".format(xml_file))
+        print(f"{xml_file} not found")
         sys.exit(1)
 
-    rrd_bak = "{}.bak".format(rrd_file)
+    rrd_bak = f"{rrd_file}.bak"
 
     os.rename(rrd_file, rrd_bak)
 
-    result = subprocess.run(
-        "rrdtool restore -r {} {}".format(xml_file, rrd_file), shell=True
-    )
-
-    if result.returncode != 0:  # TODO: use check=True and try/except
+    try:
+        subprocess.run(
+            f"rrdtool restore -r {xml_file} {rrd_file}", shell=True, check=True
+        )
+    except subprocess.CalledProcessError:
         print("Error restoring")
         sys.exit(1)
 
 
-def normalize_threshold(thold: str) -> int:
-    """Normalize the threshold (e.g. turn 10k into 10000).  Return -1 on error."""
+def normalize_threshold(thold: str) -> float:
+    """Normalize the threshold (e.g. turn 10k into 10000).  Raise ValueError on error."""
     try:
-        ret = int(thold)
+        ret = float(thold)
         return ret
     except ValueError:
         pass
 
-    match = re.match(r"(\d+(?:\.\d+)?)([kmgt])", thold, flags=re.IGNORECASE)
+    units = "".join(UNIT_MAP.keys())
+    match = re.match(
+        fr"(\d+(?:\.\d+)?)([{units}])",
+        thold,
+        flags=re.IGNORECASE,
+    )
     if not match:
-        return -1
+        raise ValueError
 
     return float(match.group(1)) * UNIT_MAP[match.group(2).upper()]
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Remove spikes from an RRD file")
-    parser.add_argument("file", type=str, help="RRD file (binary format)")
-    parser.add_argument(
-        "threshold", type=str, help="Spike threshold (may use M, G, T units)"
-    )
-    args = parser.parse_args()
-
-    src = args.file
-    threshold = normalize_threshold(args.threshold)
-
-    if not os.path.exists(src):
-        print("File {} does not exist".format(src))
-        sys.exit(1)
-
-    if threshold == -1:
-        print("Invalid threshold {}".format(args.threshold))
-        sys.exit(1)
-
-    print(threshold)
-    remove_spikes(src, threshold)
