@@ -18,19 +18,12 @@ UNIT_MAP["P"] = 10 ** 15
 UNIT_MAP["E"] = 10 ** 18
 
 
-def remove_spikes(rrd_file: str, cutoff: float):
+def remove_spikes(rrd_file: str, threshold: float):
     """Remove spikes from rrd file."""
     updates = []
 
-    with tempfile.NamedTemporaryFile(
-        suffix=".xml", prefix="rrd-orig-", delete=False
-    ) as f:
-        xml_file = f.name
-
-    print(f"Dumping to temp file: {xml_file}")
-
     try:
-        subprocess.run(f"rrdtool dump {rrd_file} {xml_file}", shell=True, check=True)
+        xml_file = dump_xml(rrd_file)
     except subprocess.CalledProcessError:
         print("Error dumping")
         sys.exit(1)
@@ -60,7 +53,7 @@ def remove_spikes(rrd_file: str, cutoff: float):
         for child in row.childNodes:
             if (
                 child.firstChild.nodeValue != "NaN"
-                and float(child.firstChild.nodeValue) > cutoff
+                and float(child.firstChild.nodeValue) > threshold
             ):
                 update.append(child.firstChild.nodeValue)
                 update.append("NaN")
@@ -79,7 +72,7 @@ def remove_spikes(rrd_file: str, cutoff: float):
 
         response = input("Remove them [y/N]? ")
         if response.lower() == "y":
-            dump_file(dom, rrd_file)
+            restore_rrd(dom, rrd_file)
         else:
             print("Not modifying file.  Goodbye.")
             return
@@ -89,8 +82,25 @@ def remove_spikes(rrd_file: str, cutoff: float):
         return
 
 
-def dump_file(dom, rrd_file: str):
-    """Now dump the output."""
+def dump_xml(rrd_file: str) -> str:
+    """Dump RRD to XML.  Returns temp XML filename on success, otherwise None."""
+    with tempfile.NamedTemporaryFile(
+        suffix=".xml", prefix="rrd-orig-", delete=False
+    ) as f:
+        xml_file = f.name
+
+    print(f"Dumping to temp file: {xml_file}")
+
+    try:
+        subprocess.run(f"rrdtool dump {rrd_file} {xml_file}", shell=True, check=True)
+    except subprocess.CalledProcessError as e:
+        raise e
+
+    return xml_file
+
+
+def restore_rrd(dom, rrd_file: str):
+    """Backup original RRD file and restore cleaned XML to the RRD file."""
     with tempfile.NamedTemporaryFile(
         suffix=".xml", prefix="rrd-clean-", delete=False
     ) as f:
@@ -116,10 +126,10 @@ def dump_file(dom, rrd_file: str):
         sys.exit(1)
 
 
-def normalize_threshold(thold: str) -> float:
+def normalize_threshold(threshold: str) -> float:
     """Normalize the threshold (e.g. turn 10k into 10000).  Raise ValueError on error."""
     try:
-        ret = float(thold)
+        ret = float(threshold)
         return ret
     except ValueError:
         pass
@@ -127,7 +137,7 @@ def normalize_threshold(thold: str) -> float:
     units = "".join(UNIT_MAP.keys())
     match = re.match(
         fr"(\d+(?:\.\d+)?)([{units}])",
-        thold,
+        threshold,
         flags=re.IGNORECASE,
     )
     if not match:

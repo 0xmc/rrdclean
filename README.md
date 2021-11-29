@@ -9,6 +9,17 @@ Features of this version
 * Friendly thresholds (1.2k instead of 1200)
 * Remove all values in row above threshold, not just the first one
 
+## Using
+Install
+```shell
+python setup build
+python setup install
+```
+Run
+```shell
+python run.py FILE THRESHOLD
+```
+
 ## Developing
 Install
 ```shell
