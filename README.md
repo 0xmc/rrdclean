@@ -12,12 +12,12 @@ Features of this version
 ## Using
 Install
 ```shell
-python setup build
-python setup install
+python3 setup.py build
+python3 setup.py install  # may need sudo
 ```
 Run
 ```shell
-python run.py FILE THRESHOLD
+python3 -m rrdclean FILE THRESHOLD
 ```
 
 ## Developing
@@ -25,7 +25,7 @@ Install
 ```shell
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements-dev.txt
+pip3 install -r requirements-dev.txt
 ```
 Before PR
 ```shell
