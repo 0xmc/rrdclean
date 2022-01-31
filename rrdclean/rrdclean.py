@@ -10,12 +10,12 @@ import xml.dom.minidom
 
 
 UNIT_MAP = {}
-UNIT_MAP["K"] = 10 ** 3
-UNIT_MAP["M"] = 10 ** 6
-UNIT_MAP["G"] = 10 ** 9
-UNIT_MAP["T"] = 10 ** 12
-UNIT_MAP["P"] = 10 ** 15
-UNIT_MAP["E"] = 10 ** 18
+UNIT_MAP["K"] = 10**3
+UNIT_MAP["M"] = 10**6
+UNIT_MAP["G"] = 10**9
+UNIT_MAP["T"] = 10**12
+UNIT_MAP["P"] = 10**15
+UNIT_MAP["E"] = 10**18
 
 
 def remove_spikes(rrd_file: str, threshold: float):
@@ -115,7 +115,11 @@ def restore_rrd(dom, rrd_file: str):
 
     rrd_bak = f"{rrd_file}.bak"
 
-    os.rename(rrd_file, rrd_bak)
+    try:
+        os.rename(rrd_file, rrd_bak)
+    except PermissionError:
+        print(f"Cannot rename {rrd_file}")
+        sys.exit(1)
 
     try:
         subprocess.run(
@@ -136,7 +140,7 @@ def normalize_threshold(threshold: str) -> float:
 
     units = "".join(UNIT_MAP.keys())
     match = re.match(
-        fr"(\d+(?:\.\d+)?)([{units}])",
+        rf"(\d+(?:\.\d+)?)([{units}])",
         threshold,
         flags=re.IGNORECASE,
     )
