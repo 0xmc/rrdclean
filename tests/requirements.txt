@@ -1,8 +1,8 @@
 black
 coverage
-flake8
+# flake8
 mypy
-pylint
+# pylint
 pytest
 pytest-cov
 tox

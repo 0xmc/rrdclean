@@ -18,7 +18,9 @@ UNIT_MAP["P"] = 10**15
 UNIT_MAP["E"] = 10**18
 
 
-def remove_spikes(rrd_file: str, threshold: float):
+def remove_spikes(
+    rrd_file: str, threshold: float, prompt: bool = True, dryrun: bool = False
+) -> list:
     """Remove spikes from rrd file."""
     updates = []
 
@@ -70,16 +72,21 @@ def remove_spikes(rrd_file: str, threshold: float):
         for update in updates:
             print(update)
 
-        response = input("Remove them [y/N]? ")
-        if response.lower() == "y":
+        if prompt and not dryrun:
+            response = input("Remove them [y/N]? ")
+            if response.lower() == "y":
+                restore_rrd(dom, rrd_file)
+            else:
+                print("Not modifying file.  Goodbye.")
+        elif not dryrun:
             restore_rrd(dom, rrd_file)
         else:
-            print("Not modifying file.  Goodbye.")
-            return
+            print("Dryrun")
 
     else:
         print("No spikes found")
-        return
+
+    return updates
 
 
 def dump_xml(rrd_file: str) -> str:
