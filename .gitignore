@@ -128,11 +128,6 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# PyCharm
-.idea/
-
-# emacs
-*~
-
-# backups
+# rrd and related files
+*.rrd
 *.bak

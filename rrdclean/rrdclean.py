@@ -55,7 +55,7 @@ def remove_spikes(
         for child in row.childNodes:
             if (
                 child.firstChild.nodeValue != "NaN"
-                and float(child.firstChild.nodeValue) > threshold
+                and float(child.firstChild.nodeValue) * 8 > threshold
             ):
                 update.append(child.firstChild.nodeValue)
                 update.append("NaN")
